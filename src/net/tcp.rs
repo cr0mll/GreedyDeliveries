@@ -4,24 +4,25 @@ use tokio::{
 };
 
 use std::sync::Arc;
-use std::sync::Mutex;
+use tokio::sync::Mutex;
+use serde::{Serialize, Deserialize};
+
+pub use super::{Message, MessageHeader, MessageType};
 
 pub struct Server {
     listener: TcpListener,
     connections: Mutex<Vec<TcpStream>>,
-    on_connection: fn(&mut TcpStream) -> ()
 }
 
 impl Server {
     pub const LISTEN_PORT: u16 = 1337;
 
-    pub async fn new(on_connection: fn(&mut TcpStream) -> ()) -> Arc<Server> {
+    pub async fn new() -> Arc<Server> {
         Arc::new(Server {
             listener: TcpListener::bind(format!("0.0.0.0:{}", Server::LISTEN_PORT))
                 .await
                 .unwrap(),
-            connections: Mutex::new(Vec::new()),
-            on_connection
+            connections: Mutex::new(Vec::new())
         })
     }
 
@@ -34,7 +35,7 @@ impl Server {
                 tokio::spawn({
                     let this = Arc::clone(&self);
                     async move {
-                        this.process_connection(conn);
+                        this.process_connection(conn).await;
                     }
                 });
             } else {
@@ -43,12 +44,25 @@ impl Server {
         }
     }
 
-    fn process_connection(self: Arc<Self>, mut connection: TcpStream) {
-        (self.on_connection)(&mut connection);
-        if let Ok(mut lock) = self.connections.lock() {
-            lock.push(connection);
-        } else {
-            println!("Failed to obtain mutex lock.");
-        }
+    async fn process_connection(self: Arc<Self>, mut connection: TcpStream) {
+        let mut lock = self.connections.lock().await;
+
+            let msg = Message {
+                header: MessageHeader {
+                    message_type: MessageType::ReturnActiveSubscriptions,
+                    message_size: 12
+                },
+                body: Vec::new()
+            };
+
+            self.send_message(msg, &mut connection).await;
+            
+        lock.push(connection);
+    }
+
+    pub async fn send_message(&self, message: Message, client: &mut TcpStream) {
+        let message_bytes = bincode::serialize(&message).unwrap();
+
+        client.write_all(&message_bytes[..]).await.unwrap();
     }
 }

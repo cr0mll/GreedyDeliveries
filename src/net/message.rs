@@ -1,5 +1,7 @@
+use serde::{Serialize, Deserialize};
 
 #[repr(u8)]
+#[derive(Serialize, Deserialize)]
 pub enum MessageType {
     /*
     A message type representing that a Bulletin Board initially sends to a Blockchain when it wants to post it.
@@ -49,12 +51,14 @@ pub enum MessageType {
     RequestResource
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct MessageHeader {
-    message_type: MessageType,
-    message_size: u32
+    pub message_type: MessageType,
+    pub message_size: u32
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct Message {
-    header: MessageHeader,
-    body: Vec<u8>
+    pub header: MessageHeader,
+    pub body: Vec<u8>
 }
