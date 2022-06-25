@@ -9,7 +9,7 @@ use std::sync::Mutex;
 pub struct Server {
     listener: TcpListener,
     connections: Mutex<Vec<TcpStream>>,
-    on_connection: fn(&mut TcpStream) -> (),
+    on_connection: fn(&mut TcpStream) -> ()
 }
 
 impl Server {
