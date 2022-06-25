@@ -34,7 +34,7 @@ impl Server {
                 tokio::spawn({
                     let this = Arc::clone(&self);
                     async move {
-                        Self::process_connection(this, conn);
+                        this.process_connection(conn);
                     }
                 });
             } else {
@@ -43,9 +43,9 @@ impl Server {
         }
     }
 
-    fn process_connection(server: Arc<Self>, mut connection: TcpStream) {
-        (server.on_connection)(&mut connection);
-        if let Ok(mut lock) = server.connections.lock() {
+    fn process_connection(self: Arc<Self>, mut connection: TcpStream) {
+        (self.on_connection)(&mut connection);
+        if let Ok(mut lock) = self.connections.lock() {
             lock.push(connection);
         } else {
             println!("Failed to obtain mutex lock.");
