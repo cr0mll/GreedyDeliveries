@@ -1,36 +1,42 @@
 use tokio::{
-    io::AsyncWriteExt,
-    net::{TcpListener, TcpSocket, TcpStream},
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::{TcpListener, TcpStream}
 };
 
 use std::sync::Arc;
-use tokio::sync::Mutex;
-use serde::{Serialize, Deserialize};
+use tokio::sync::broadcast;
 
 pub use super::{Message, MessageHeader, MessageType};
 
 pub struct Server {
     listener: TcpListener,
-    connections: Mutex<Vec<TcpStream>>,
+    sender: broadcast::Sender<Message>
 }
 
 impl Server {
     pub const LISTEN_PORT: u16 = 1337;
 
     pub async fn new() -> Arc<Server> {
-        Arc::new(Server {
+        // There shouldn't be many messages broadcast by the server
+        let (sender, _) = broadcast::channel(16);
+        let instance = Arc::new(Server {
             listener: TcpListener::bind(format!("0.0.0.0:{}", Server::LISTEN_PORT))
                 .await
                 .unwrap(),
-            connections: Mutex::new(Vec::new())
-        })
+                sender
+        });
+
+        instance
     }
 
-    pub async fn listen(self: Arc<Self>) {
+    pub async fn run(self: Arc<Self>) {  
+        self.listen().await;
+    }
+
+    async fn listen(self: Arc<Self>) {
         println!("Listening for connections...");
         loop {
             if let Ok((conn, _)) = self.listener.accept().await {
-                
                 println!("Processing connection!");
                 tokio::spawn({
                     let this = Arc::clone(&self);
@@ -45,24 +51,56 @@ impl Server {
     }
 
     async fn process_connection(self: Arc<Self>, mut connection: TcpStream) {
-        let mut lock = self.connections.lock().await;
+        let test_message = Message {
+            header: MessageHeader { message_type: MessageType::PostBlockchain, message_size: 12 },
+            body: vec![1; 12]
+        };
+        
+        self.broadcast(test_message).await;
 
-            let msg = Message {
-                header: MessageHeader {
-                    message_type: MessageType::ReturnActiveSubscriptions,
-                    message_size: 12
-                },
-                body: Vec::new()
-            };
+        let mut broadcast_receiver = self.sender.subscribe();
+        loop {
+            // First send out any broadcasts
+            if let Ok(message) = broadcast_receiver.recv().await {
+                self.send_message(message, &mut connection).await;
+            } else {
+                println!("Failed to broadcast message!");
+            }
 
-            self.send_message(msg, &mut connection).await;
-            
-        lock.push(connection);
+            let msg = self.read_message(&mut connection).await;
+
+            match msg.header.message_type {
+                _ => ()
+            }
+        }
     }
 
-    pub async fn send_message(&self, message: Message, client: &mut TcpStream) {
+    async fn broadcast(&self, message: Message) {
+        match self.sender.send(message) {
+            Ok(_) => (),
+            Err(_) => println!("Failed to send message through channel!")
+        }
+    }
+
+    async fn send_message(&self, message: Message, client: &mut TcpStream) {
         let message_bytes = bincode::serialize(&message).unwrap();
 
         client.write_all(&message_bytes[..]).await.unwrap();
+    }
+
+    async fn read_message(&self, client: &mut TcpStream) -> Message {
+        let mut msg_header: [u8; 40] = [0; 40];
+
+        client.read_exact(&mut msg_header).await.unwrap();
+        let msg_header: MessageHeader = bincode::deserialize(&msg_header).unwrap();
+
+        let mut msg_body: Vec<u8> = Vec::with_capacity(msg_header.message_size as usize);
+        client.read_exact(&mut msg_body[..]).await.unwrap();
+        let msg_body: Vec<u8> = bincode::deserialize(&msg_body).unwrap();
+
+        Message {
+            header: msg_header,
+            body: msg_body,
+        }
     }
 }

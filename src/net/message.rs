@@ -1,7 +1,7 @@
 use serde::{Serialize, Deserialize};
 
 #[repr(u8)]
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub enum MessageType {
     /*
     A message type representing that a Bulletin Board initially sends to a Blockchain when it wants to post it.
@@ -51,14 +51,30 @@ pub enum MessageType {
     RequestResource
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct MessageHeader {
     pub message_type: MessageType,
     pub message_size: u32
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize,Clone)]
 pub struct Message {
     pub header: MessageHeader,
+    #[serde(with = "serde_bytes")]
     pub body: Vec<u8>
 }
+
+/* Manual serialisation to make the implementation compliant with the described standard.
+The default implementation serialises a Vec<u8> by prepending metadata, which we want to avoid.
+
+impl Serialize for Message {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut state = serializer.serialize_struct("Message", 2)?;
+        serializer.serialize_sr
+        serializer.serialize_bytes(&self.body[..])
+    }
+}
+*/
