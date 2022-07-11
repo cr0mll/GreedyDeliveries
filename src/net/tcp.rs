@@ -51,14 +51,16 @@ impl Server {
     }
 
     async fn process_connection(self: Arc<Self>, mut connection: TcpStream) {
+        let mut broadcast_receiver = self.sender.subscribe();
+        let mut msg_body = vec![1; 12];
+        msg_body.shrink_to_fit();
         let test_message = Message {
             header: MessageHeader { message_type: MessageType::PostBlockchain, message_size: 12 },
-            body: vec![1; 12]
+            body: msg_body
         };
         
         self.broadcast(test_message).await;
 
-        let mut broadcast_receiver = self.sender.subscribe();
         loop {
             // First send out any broadcasts
             if let Ok(message) = broadcast_receiver.recv().await {
@@ -83,7 +85,18 @@ impl Server {
     }
 
     async fn send_message(&self, message: Message, client: &mut TcpStream) {
-        let message_bytes = bincode::serialize(&message).unwrap();
+        use std::mem;
+
+        let mut message_bytes: Vec<u8> = Vec::with_capacity(mem::size_of::<MessageHeader>() + message.header.message_size as usize);
+        
+        // Push the message header
+        message_bytes.append(&mut bincode::serialize(&message.header).unwrap());
+        
+        // Some shenanigans to remove extra information that bincode prepends to serialised vectors.
+        // Done in order to keep the implementation definition-compliant. Fuck you bincode.
+        let mut serialised_body = bincode::serialize(&message.body).unwrap();
+        let ostensible_body_length = serialised_body.len();
+        message_bytes.extend_from_slice(&mut serialised_body[(ostensible_body_length - message.header.message_size as usize)..]);
 
         client.write_all(&message_bytes[..]).await.unwrap();
     }
