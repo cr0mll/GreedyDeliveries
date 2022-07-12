@@ -54,6 +54,7 @@ impl Server {
         let mut broadcast_receiver = self.sender.subscribe();
         let mut msg_body = vec![1; 12];
         msg_body.shrink_to_fit();
+
         let test_message = Message {
             header: MessageHeader { message_type: MessageType::PostBlockchain, message_size: 12 },
             body: msg_body
@@ -69,11 +70,16 @@ impl Server {
                 println!("Failed to broadcast message!");
             }
 
-            let msg = self.read_message(&mut connection).await;
-
-            match msg.header.message_type {
-                _ => ()
+            if let Ok(msg) = self.read_message(&mut connection).await {
+                match msg.header.message_type {
+                    _ => ()
+                }
+            } else {
+                // Drop connection
+                return;
             }
+
+            
         }
     }
 
@@ -90,19 +96,15 @@ impl Server {
         client.write_all(&message_bytes[..]).await.unwrap();
     }
 
-    async fn read_message(&self, client: &mut TcpStream) -> Message {
+    async fn read_message(&self, client: &mut TcpStream) -> tokio::io::Result<Message> {
         let mut msg_header: [u8; 40] = [0; 40];
 
-        if let Err(err) = client.read_exact(&mut msg_header).await {
-            println!("An error occurred: {}", err.to_string());
-        }
+        client.read_exact(&mut msg_header).await?;
         let msg_header: MessageHeader = bincode::deserialize(&msg_header).unwrap();
 
         let mut msg_body: Vec<u8> = Vec::with_capacity(msg_header.message_size as usize);
-        if let Err(err) = client.read_exact(&mut msg_body[..]).await {
-            println!("An error occurred: {}", err.to_string());
-        }
+        client.read_exact(&mut msg_body[..]).await?;
 
-        Message::deserialise_with_header(&msg_body[..], msg_header)
+        Ok(Message::deserialise_with_header(&msg_body[..], msg_header))
     }
 }
