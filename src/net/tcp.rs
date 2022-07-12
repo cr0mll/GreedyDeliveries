@@ -85,35 +85,24 @@ impl Server {
     }
 
     async fn send_message(&self, message: Message, client: &mut TcpStream) {
-        use std::mem;
 
-        let mut message_bytes: Vec<u8> = Vec::with_capacity(mem::size_of::<MessageHeader>() + message.header.message_size as usize);
-        
-        // Push the message header
-        message_bytes.append(&mut bincode::serialize(&message.header).unwrap());
-        
-        // Some shenanigans to remove extra information that bincode prepends to serialised vectors.
-        // Done in order to keep the implementation definition-compliant. Fuck you bincode.
-        let mut serialised_body = bincode::serialize(&message.body).unwrap();
-        let ostensible_body_length = serialised_body.len();
-        message_bytes.extend_from_slice(&mut serialised_body[(ostensible_body_length - message.header.message_size as usize)..]);
-
+        let message_bytes = message.serialise();
         client.write_all(&message_bytes[..]).await.unwrap();
     }
 
     async fn read_message(&self, client: &mut TcpStream) -> Message {
         let mut msg_header: [u8; 40] = [0; 40];
 
-        client.read_exact(&mut msg_header).await.unwrap();
+        if let Err(err) = client.read_exact(&mut msg_header).await {
+            println!("An error occurred: {}", err.to_string());
+        }
         let msg_header: MessageHeader = bincode::deserialize(&msg_header).unwrap();
 
         let mut msg_body: Vec<u8> = Vec::with_capacity(msg_header.message_size as usize);
-        client.read_exact(&mut msg_body[..]).await.unwrap();
-        let msg_body: Vec<u8> = bincode::deserialize(&msg_body).unwrap();
-
-        Message {
-            header: msg_header,
-            body: msg_body,
+        if let Err(err) = client.read_exact(&mut msg_body[..]).await {
+            println!("An error occurred: {}", err.to_string());
         }
+
+        Message::deserialise_with_header(&msg_body[..], msg_header)
     }
 }

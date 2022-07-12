@@ -66,7 +66,7 @@ pub struct MessageHeader {
 }
 
 #[repr(C)]
-#[derive(Serialize, Deserialize,Clone)]
+#[derive(Deserialize,Clone)]
 pub struct Message {
     pub header: MessageHeader,
 
@@ -76,17 +76,28 @@ pub struct Message {
 
 /* Manual serialisation to make the implementation compliant with the described standard.
 The default implementation serialises a Vec<u8> by prepending metadata, which we want to avoid.
+*/
 
+impl Message {
+    pub fn serialise(&self) -> Vec<u8> {
+        // Serialise the header
+        let mut bytes = bincode::serialize(&self.header).unwrap();
+        bytes.extend_from_slice(&self.body[..]);
+        bytes
+    }
 
-impl Serialize for Message {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut state = serializer.serialize_struct("Message", 2)?;
-        state.serialize_field("header", &self.header)?;
-        state.serialize_bytes(&self.body[..]);
-        state.end()
+    pub fn deserialise(bytes: &[u8]) -> Self {
+        let header: MessageHeader = bincode::deserialize(&bytes[..std::mem::size_of::<MessageHeader>()]).unwrap();
+        
+        Self::deserialise_with_header(bytes, header)
+
+    }
+
+    pub fn deserialise_with_header(bytes: &[u8], header: MessageHeader) -> Self {
+        let mut body: Vec<u8> = Vec::with_capacity(header.message_size as usize);
+
+        body.extend_from_slice(&bytes[std::mem::size_of::<MessageHeader>()..header.message_size as usize]);
+
+        Message { header, body }
     }
 }
-*/
